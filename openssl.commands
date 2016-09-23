@@ -1,0 +1,22 @@
+openssl list-standard-commands
+
+openssl x509 -noout -text -in wildcard.some.domain.com.crt
+
+openssl rsa -noout -text -in wildcard.some.domain.com.key
+
+
+openssl pkcs12 \
+        -export \
+        -in       wildcard.some.domain.com.crt \
+        -inkey    wildcard.some.domain.com.key \
+        -certfile wildcard.some.domain.com.chain.crt \
+        -out      wildcard.some.domain.com.p12
+#       -password stdin
+#       -password pass:shortbadpasswd
+
+
+openssl pkcs12 -noout -info -in wildcard.some.domain.com.p12
+
+( echo -----BEGIN PKCS12-----;
+  openssl base64 -in wildcard.some.domain.com.p12
+  echo -----END PKCS12----- ) > wildcard.some.domain.com.pkcs12
