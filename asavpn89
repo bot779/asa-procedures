@@ -1,0 +1,172 @@
+#!/bin/sh
+
+echo Generate asa vpn configs
+echo by William Burns
+echo "(edit this script to change the paramters)"
+echo
+
+LIVE=false
+LIVE=true
+
+# central inside address
+CEN_IN_ADD=10.192.119.249
+CEN_IN_MASK=255.255.255.0
+CEN_IN_GATE=10.192.119.254
+
+# central outside address
+CEN_OUT_ADD=10.192.210.6
+CEN_OUT_MASK=255.255.255.0
+CEN_OUT_GATE=10.192.210.60
+CEN_NET=10.192.0.0
+CEN_MASK=255.255.0.0
+
+# satellite inside address
+SAT_IN_ADD=10.192.89.254
+SAT_IN_NET=10.192.89.0
+SAT_IN_MASK=255.255.255.0
+SAT_TUN_NAME=tun89
+# satellite outside address
+#SAT_OUT_ADD=192.168.1.2
+SAT_OUT_ADD=96.56.123.34
+#SAT_OUT_MASK=255.255.255.0
+SAT_OUT_MASK=255.255.255.248
+#SAT_OUT_GATE=192.168.1.1
+SAT_OUT_GATE=96.56.123.33
+
+# satellite inside DHCP range
+SAT_IN_DHCP_START=10.192.89.2
+SAT_IN_DHCP_END=10.192.89.100
+
+# A security association defines the parameters for a one-way tunnel
+
+echo "! Building a minimal VPN config to a Satellite 5505 at:"
+echo "! ${SAT_IN_ADD}/${SAT_OUT_ADD} ${SAT_IN_MASK}/${SAT_OUT_MASK} ${SAT_IN_NET}/${SAT_OUT_GATE}"
+echo "! from a central 5510 at:"
+echo "! ${CEN_IN_ADD}/${CEN_OUT_ADD} ${CEN_IN_MASK}/${CEN_OUT_MASK} ${CEN_IN_GATE}/${CEN_OUT_GATE}"
+echo
+
+echo "! remote 5505 base config"
+echo "int vlan1"
+echo " ip address $SAT_IN_ADD $SAT_IN_MASK"
+$LIVE && echo " exit"
+echo "management-access inside"
+
+echo "int vlan2"
+echo " ip address $SAT_OUT_ADD $SAT_OUT_MASK"
+$LIVE && echo " exit"
+
+echo "route outside 0.0.0.0 0.0.0.0 $SAT_OUT_GATE"
+echo "! route inside $CEN_NET $CEN_MASK $CEN_IN_GATE"
+
+echo "access-list allowacl permit icmp any any"
+echo "access-list allowacl permit ip any any"
+echo "access-group allowacl in interface inside"
+echo "access-group allowacl in interface outside"
+
+echo "! dhcpd address ${SAT_IN_DHCP_START}-${SAT_IN_DHCP_END} inside"
+echo "! dhcpd enable inside"
+
+echo
+echo "! satellite 5505 tunnel config"
+echo "! send all non-local traffic through the tunnel"
+
+echo
+#./asa_sa ${SAT_TUN_NAME} $SAT_IN_NET $SAT_IN_MASK $SAT_OUT_GATE $CEN_NET $CEN_MASK $CEN_OUT_ADD
+./asa_sa ${SAT_TUN_NAME} $SAT_IN_NET $SAT_IN_MASK $SAT_OUT_ADD $SAT_OUT_GATE 0.0.0.0 0.0.0.0 $CEN_OUT_ADD
+
+echo "! access-list outside permit ip any $SAT_IN_NET $SAT_IN_MASK"
+echo "! access-list inside permit ip $SAT_IN_NET $SAT_IN_MASK any"
+
+#echo "access-list tun100 extended permit ip 0.0.0.0 0.0.0.0 $SAT_IN_NET $SAT_IN_MASK"
+#echo "! route outside $CEN_NET $CEN_MASK $SAT_OUT_GATE"
+
+#echo "crypto ipsec transform-set myset esp-3des esp-sha-hmac"
+
+#echo "crypto map outside_map 20 match address tun100"
+#echo "crypto map outside_map 20 set peer $CEN_OUT_ADD"
+#echo "crypto map outside_map 20 set transform-set myset"
+
+#echo "crypto map outside_map interface outside"
+
+#echo "crypto isakmp enable outside"
+
+#echo "crypto isakmp policy 10"
+#echo " authentication pre-share"
+#echo " encryption 3des"
+#echo " hash sha"
+#echo " group 2"
+#echo " lifetime 86400"
+#$LIVE && echo " exit"
+
+#echo "tunnel-group $CEN_OUT_ADD ipsec-l2l"
+#echo "tunnel-group $CEN_OUT_ADD ipsec-attributes"
+#echo " pre-shared-key UseABetterPassword"
+
+echo
+echo "! #######################################"
+echo
+
+echo "! central 5510 base config"
+echo "int Management0/0"
+echo " ip address 192.168.101.1"
+echo " !route management 192.168.101.254"
+$LIVE && echo " exit"
+
+echo "dhcpd address 192.168.101.200 192.168.101.220 management"
+echo "dhcpd enable management"
+
+echo "int eth0/0"
+echo " no shutdown"
+echo " nameif outside"
+echo " ip address $CEN_OUT_ADD $CEN_OUT_MASK"
+$LIVE && echo " exit"
+
+echo "int eth0/1"
+echo " no shutdown"
+echo " nameif inside"
+echo " ip address $CEN_IN_ADD $CEN_IN_MASK"
+$LIVE && echo " exit"
+
+echo "route outside 0.0.0.0 0.0.0.0 $CEN_OUT_GATE"
+echo "route inside 0.0.0.0 0.0.0.0 $CEN_IN_GATE tunneled"
+echo "route inside $CEN_NET $CEN_MASK $CEN_IN_GATE"
+
+echo "access-list inside permit icmp any any"
+echo "access-list outside permit icmp any any"
+echo "access-group inside in interface inside"
+echo "access-group outside in interface outside"
+
+echo "! central 5510 per-tunnel config"
+
+echo
+#echo ./asa_sa ${SAT_TUN_NAME} 0.0.0.0 0.0.0.0 $CEN_OUT_GATE $SAT_IN_NET $SAT_IN_MASK $SAT_OUT_ADD
+./asa_sa ${SAT_TUN_NAME} 0.0.0.0 0.0.0.0 $CEN_OUT_ADD $CEN_OUT_GATE $SAT_IN_NET $SAT_IN_MASK $SAT_OUT_ADD
+
+echo "access-list inside extended permit ip 0.0.0.0 0.0.0.0 $SAT_IN_NET $SAT_IN_MASK"
+echo "access-list outside extended permit ip $SAT_IN_NET $SAT_IN_MASK 0.0.0.0 0.0.0.0"
+
+#echo "access-list tun100 extended permit ip $SAT_IN_NET $SAT_IN_MASK 0.0.0.0 0.0.0.0"
+#echo "access-list tun100 extended permit ip 0.0.0.0 0.0.0.0 $CEN_NET $CEN_MASK"
+
+#echo "route outside $SAT_OUT_ADD $SAT_OUT_MASK $CEN_OUT_GATE"
+
+#echo "crypto ipsec transform-set myset esp-3des esp-sha-hmac"
+
+#echo "crypto map outside_map 20 match address tun100"
+#echo "crypto map outside_map 20 set peer $SAT_OUT_ADD"
+#echo "crypto map outside_map 20 set transform-set myset"
+
+#echo "crypto map outside_map interface outside"
+
+#echo "crypto isakmp enable outside"
+#echo "crypto isakmp policy 10"
+#echo " authentication pre-share"
+#echo " encryption 3des"
+#echo " hash sha"
+#echo " group 2"
+#echo " lifetime 86400"
+#$LIVE && echo " exit"
+
+#echo "tunnel-group $SAT_OUT_ADD type ipsec-l2l"
+#echo "tunnel-group $SAT_OUT_ADD ipsec-attributes"
+#echo " pre-shared-key UseABetterPassword"
