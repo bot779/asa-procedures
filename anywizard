@@ -1,0 +1,178 @@
+#!/bin/sh
+
+if [ ! -z "$CONFIGFILE" ]
+then
+  . ./$CONFIGFILE
+else
+  echo "Error: CONFIGFILE not defined"
+  echo
+  exit
+fi
+
+echo
+echo "Press return to continue ASA Anyconnect configuration"
+read
+echo
+echo "conf t"
+if [ ! -z "$INSIDEGATEWAY" ]
+then
+  echo "route inside 0.0.0.0 0.0.0.0 $INSIDEGATEWAY tunneled"
+fi
+echo "crypto key generate rsa label $KEYPAIR modulus 2048"
+echo "crypto ca trustpoint $TRUSTPOINT"
+echo " keypair $KEYPAIR"
+echo " id-usage ssl-ipsec"
+echo " !no fqdn"
+echo " !fqdn $VPNHOSTNAME"
+echo " fqdn none"
+echo " subject-name CN=$VPNHOSTNAME"
+echo " enrollment terminal"
+echo " exit"
+echo "crypto ca enroll $TRUSTPOINT"
+echo
+echo "!! Get a certificate"
+read
+echo
+echo "conf t"
+echo "!!crypto ca import $TRUSTPOINT certificate"
+echo "crypto ca import $TRUSTPOINT pkcs12 <password>"
+
+echo "!! Get CA Cert"
+echo "!! .. from a pkcs12 procedure named something like: /etc/admin/openssl/wildcard/asa/install.man"
+read
+echo "! retrieve a cert via SCEP (simple certificate enrollment protocol)"
+echo "!crypto ca authenticate $TRUSTPOINT"
+echo
+
+echo "!! show crypto ca certificates"
+echo
+
+
+
+echo "dynamic-access-policy-record DfltAccessPolicy"
+echo "aaa-server RAD_SRV_GRP protocol radius"
+RADIUSSERVERS=`echo "$RADIUSSERVER" \
+| sed -e 's/ /\n/' \
+      -e 's/,/\n/'`
+echo -e "$RADIUSSERVERS" \
+|while read RADIUSSERVER
+do
+  echo "aaa-server RAD_SRV_GRP (inside) host $RADIUSSERVER"
+  echo " key $RADIUSKEY"
+done
+echo
+
+echo "no vpn-addr-assign aaa"
+echo "no vpn-addr-assign local"
+echo "vpn-addr-assign dhcp"
+
+echo "http $LOCALNET $LOCALMASK inside"
+echo "http $MANAGEMENTNET $MANAGEMENTMASK management"
+echo "http server enable"
+
+echo "!crypto ipsec security-association lifetime seconds 28800"
+echo "!crypto ipsec security-association lifetime kilobytes 4608000"
+echo
+
+echo " !! To restart the certificate serving process"
+echo " !no ssl trust-point $TRUSTPOINT outside"
+echo "ssl trust-point $TRUSTPOINT outside"
+
+echo "webvpn"
+echo " !! enable webVPN"
+echo " enable outside"
+ANYCONNECTIMAGES=`echo "$ANYCONNECTIMAGE" \
+| sed -e 's/ /\n/' \
+      -e 's/,/\n/'`
+INDEX=1
+echo -e "$ANYCONNECTIMAGES" \
+|while read ANYCONNECTIMAGE
+do
+  echo " !svc image disk0:/$ANYCONNECTIMAGE $INDEX"
+  echo " anyconnect image disk0:/$ANYCONNECTIMAGE $INDEX"
+  let INDEX=$INDEX+1
+done
+echo " !! enable anyconnect"
+echo " !svc enable"
+echo " anyconnect enable"
+echo " !! display the list of tunnel-groups"
+echo " tunnel-group-list enable"
+echo " exit"
+echo
+echo " !! to verify that the anyconnect images are installed"
+echo " !show webvpn anyconnect"
+echo
+
+# anyconnect image anyconnect-win-?.?.????-k9.pkg 1
+# anyconnect image anyconnect-macos-i386-?.?.????.pkg 2
+# anyconnect image anyconnect-linux-?.?.????-k9.pkg 3
+
+if [ -z "$DHCPSERVER" ]
+then
+  echo "ip local pool AnyConnect-Pool <POOLSTARTINGIP> <POOLENDINGIP> mask $INSIDEMASK"
+else
+  echo "!! ip local pool AnyConnect-Pool <POOLSTARTINGIP> <POOLENDINGIP> mask $INSIDEMASK"
+fi
+
+echo "tunnel-group AnyConnectProfile type remote-access"
+echo "tunnel-group AnyConnectProfile webvpn-attributes"
+echo " group-alias SSLVPNClient enable"
+echo "tunnel-group AnyConnectProfile general-attributes"
+echo "  authentication-server-group RAD_SRV_GRP"
+echo " !default-group-policy DfltGrpPolicy"
+echo " default-group-policy BASIC-ANYCONNECT-POLICY"
+if [ -z "$DHCPSERVER" ]
+then
+  echo " address-pool AnyConnect-Pool"
+  echo " domain-name $DOMAIN"
+else
+  DHCPSERVERS=`echo "$DHCPSERVER" \
+  | sed -e 's/ /\n/' \
+        -e 's/,/\n/'`
+  echo -e "$DHCPSERVERS" \
+  |while read DHCPSERVER
+  do
+   echo " dhcp-server $DHCPSERVER"
+  done
+  echo " !! Enable RFC3011 or RFC3527"
+  echo " !dhcp-server subnet-selection $DHCPSERVER"
+  echo " !dhcp-server link-selection $DHCPSERVER"
+fi
+echo
+
+echo "!group-policy DfltGrpPolicy"
+echo "group-policy BASIC-ANYCONNECT-POLICY internal"
+echo "group-policy BASIC-ANYCONNECT-POLICY attributes"
+echo " !vpn-tunnel-protocol svc"
+echo " vpn-tunnel-protocol ssl-client"
+
+if [ ! -z "DNSSERVER" ]
+then
+ echo " !! Why can't I figure out how to get DHCP clients to accept a DNS server from the DHCP server?"
+ #DNSSERVERS=`echo "$DNSSERVER" \
+ #| sed -e 's/ /\n/' \
+ #      -e 's/,/\n/'`
+ #echo -e "$DNSSERVERS" \
+ #|while read DNSSERVER
+ #do
+ # echo " dns-server value $DNSSERVER"
+ #done
+ echo " dns-server value $DNSSERVER"
+fi
+echo " default-domain value $DOMAIN"
+echo " wins server none"
+
+if [ ! -z "$DHCPSERVER" ]
+then
+ echo " dhcp-network-scope $INSIDEIP"
+fi
+echo " webvpn"
+echo "  !svc dtls enable"
+echo "  anyconnect ssl dtls enable"
+
+ exit
+
+
+group-policy vendor attributes
+ webvpn
+ customation value vendor
