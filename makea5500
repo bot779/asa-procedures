@@ -1,0 +1,179 @@
+if [ ! -z "$CONFIGFILE" ]
+then
+  . ./$CONFIGFILE
+else
+  echo "Error: CONFIGFILE not defined"
+  echo
+  exit
+fi
+
+if [ -z "$ASA" ]
+then
+  ASA="5510"
+fi
+
+if [ "$ASA" = "5510" ]
+then
+  ETH="eth"
+else
+  ETH="gi"
+fi
+
+echo "!mode single"
+echo "!config factory-default"
+echo
+echo "hostname $HOSTNAME"
+echo "domain-name $DOMAIN"
+echo "prompt hostname context"
+echo
+echo "enable password $ENABLE"
+echo "passwd $PASSWORD"
+echo
+echo "interface ${ETH}0/0"
+echo " nameif outside"
+echo " security-level 0"
+echo " ip address $OUTSIDEIP $OUTSIDEMASK"
+echo
+echo "interface ${ETH}0/1"
+echo " nameif inside"
+echo " security-level 100"
+echo " ip address $INSIDEIP $INSIDEMASK"
+echo
+echo "interface man0/0"
+echo " nameif management"
+echo " security-level 100"
+echo " ip address $MANAGEMENTIP $MANAGEMENTMASK"
+echo " management-only"
+echo
+echo "mtu inside 1500"
+echo "mtu outside 1500"
+echo
+echo "same-security-traffic permit inter-interface"
+echo "same-security-traffic permit intra-interface"
+echo
+echo "access-list inbound extended permit icmp any any echo-reply"
+echo "access-list inbound extended permit icmp any any source-quench"
+echo "access-list inbound extended permit icmp any any unreachable"
+echo "access-list inbound extended permit icmp any any time-exceeded"
+echo
+echo "access-list outbound extended permit icmp any any"
+echo "access-list outbound extended permit ip any any"
+echo
+echo "access-group inbound in interface outside"
+echo "access-group outbound in interface inside"
+echo
+echo "logging enable"
+echo "logging timestamp"
+echo "logging buffer-size 8192"
+echo "logging console critical"
+echo "logging monitor informational"
+echo "logging buffered informational"
+echo "logging asdm informational"
+if [ ! -z "SNMPSERVER" ]
+then
+  echo "logging trap informational"
+  echo "logging host inside 10.192.35.19"
+fi
+echo
+
+if [ ! -z "$TIMEZONE" ]
+then
+  echo "clock timezone $TIMEZONE"
+  echo "clock summer-time EDT recurring"
+  echo
+fi
+
+if [ ! -z "$SSHINSIDENET" ]
+then
+  echo "ssh $SSHINSIDENET $SSHINSIDEMASK inside"
+fi
+if [ ! -z "$SSHOUTSIDENET" ]
+then
+  echo "ssh $SSHOUTSIDENET $SSHOUTSIDEMASK outside"
+fi
+echo "ssh version 2"
+echo "!ssh timeout 60"
+echo
+
+echo "! configure local authentication for ssh sessions"
+echo "aaa authentication ssh console LOCAL"
+echo
+
+echo "management-access inside"
+if [ ! -z "$DHCPDRANGE" ]
+then
+
+if [ ! -z "$DHCPDDNS" ]
+then
+  echo "dhcpd dns $DHCPDDNS"
+  echo "dhcpd lease 172800"
+  echo "dhcpd ping_timeout 10000"
+fi
+[ -z "$DHCPDINTERFACE" ] && DHCPDINTERFACE=inside
+echo "dhcpd address $DHCPDRANGE $DHCPDINTERFACE"
+echo "dhcpd enable $DHCPDINTERFACE"
+echo
+
+fi
+
+if [ ! -z "$NTPSERVER" ]
+then
+
+echo "ntp authenticate"
+NTPSERVERS=`echo "$NTPSERVER" \
+| sed -e 's/ /\n/' \
+      -e 's/,/\n/'`
+echo -e "$NTPSERVERS" \
+|while read NTPSERVER
+do
+  echo "ntp server $NTPSERVER"
+done
+
+fi
+
+
+ROUTING=${ROUTING:-false}
+
+if [ "$ENABLENAT" = "true" ]
+then
+  ROUTING=true
+echo "global (outside) 1 interface"
+echo "nat (inside) 1 0.0.0.0 0.0.0.0"
+fi
+echo "route outside 0.0.0.0 0.0.0.0 $OUTSIDEGATEWAY 1"
+if [ ! -z "$INSIDEGATEWAY" ]
+then
+  echo "route inside $LOCALNET $LOCALMASK $INSIDEGATEWAY 1"
+fi
+
+if [ "$ROUTING" = "true" ]
+then
+# these config lines may be needed for non-nat as well as nat routing
+echo
+echo  service-policy global_policy global
+echo
+echo "policy-map global_policy"
+echo " class inspection_default"
+echo "  inspect dns preset_dns_map"
+echo "  inspect ftp"
+echo "  inspect h323 h225"
+echo "  inspect inspect h323 ras"
+echo "  inspect netbios"
+echo "  inspect rsh"
+echo "  inspect rtsp"
+echo "  inspect skinny"
+echo "  inspect esmtp"
+echo "  inspect sqlnet"
+echo "  inspect sunrpc"
+echo "  inspect tftp"
+echo "  inspect sip"
+echo "  inspect xdmcp"
+echo
+echo "class-map inspection_default"
+echo " match default-inspection-traffic"
+echo
+echo "policy-map type inspect dns preset_dns_map"
+echo " parameters"
+echo "  message-length maximim 512"
+echo
+fi
