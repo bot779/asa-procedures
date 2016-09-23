@@ -1,0 +1,34 @@
+# to create the pcks12 file, do this:
+openssl pkcs12 -export -in ../2015_wildcard.some.domain.com.crt -inkey ../2015_wildcard.some.domain.com.key -certfile ../2015_full_chain.txt -out 2015_wildcard.some.domain.com.shortbadpasswd.p12
+( echo -----BEGIN PKCS12-----;   openssl base64 -in 2015_wildcard.some.domain.com.shortbadpasswd.p12;   echo -----END PKCS12----- ) > 2015_wildcard.some.domain.com.shortbadpasswd.pkcs12
+
+
+##############
+# Import the .pkcs12 file into your cisco ASA with the command:
+# crypto ca import <name> pkcs12 <password>
+
+###############
+# Note:
+# For the above openssl commands to work:
+# place wildcard files (from the server group) in the wildcard directory.
+# (one directory above this one)
+# They should be named:
+#
+# full_chain.txt
+# wildcard.some.domain.com.crt
+# wildcard.some.domain.com.key
+
+
+##############
+# verifying the contents of the p12 file
+# openssl pkcs12 -in 2015_wildcard.some.domain.com.shortbadpasswd.p12 -out tempcrt.pem
+# openssl x509 -in tempcrt.pem -noout -text
+
+#openssl pkcs12 -in 2015_wildcard.some.domain.com.shortbadpasswd.p12 \
+#| sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' \
+#| openssl x509 -noout -text
+
+#openssl pkcs12 -in 2015_wildcard.some.domain.com.shortbadpasswd.p12 \
+#| sed -n '1,/^-----END CERTIFICATE-----$/p' \
+#| sed -n '/^-----BEGIN CERTIFICATE-----$/,$p' \
+#| openssl x509 -noout -text
